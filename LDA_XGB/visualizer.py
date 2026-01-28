@@ -648,16 +648,32 @@ class CopathologyVisualizer:
         -------
         plt.Figure
         """
-        proba_cols = [c for c in proba_df.columns if c.startswith("P(")]
-        dx_labels = [c.replace("P(", "").replace(")", "") for c in proba_cols]
-
+        # proba_cols = [c for c in proba_df.columns if c.startswith("P(")]
+        # dx_labels = [c.replace("P(", "").replace(")", "") for c in proba_cols]
+        
+        # if dx_order is None:
+        #     dx_order = list(proba_df[dx_true_col].unique())
+        # else:
+        #     # safety check
+        #     missing = set(dx_order) - set(proba_df[dx_true_col].unique())
+        #     if len(missing) > 0:
+        #         raise ValueError(f"dx_order contains unknown labels: {missing}")
         if dx_order is None:
             dx_order = list(proba_df[dx_true_col].unique())
         else:
-            # safety check
             missing = set(dx_order) - set(proba_df[dx_true_col].unique())
             if len(missing) > 0:
                 raise ValueError(f"dx_order contains unknown labels: {missing}")
+
+        # enforce same order for predicted + true DX
+        proba_cols = [f"P({dx})" for dx in dx_order]
+
+        missing_probs = [c for c in proba_cols if c not in proba_df.columns]
+        if len(missing_probs) > 0:
+            raise ValueError(f"Missing probability columns: {missing_probs}")
+
+        dx_labels = dx_order
+
             
         # Sort by true DX and P(true DX)
         sorted_blocks = []
@@ -694,7 +710,8 @@ class CopathologyVisualizer:
         yticks = []
         ylabels = []
 
-        for dx in df_sorted[dx_true_col].unique():
+        # for dx in df_sorted[dx_true_col].unique():
+        for dx in dx_order:
             count = (df_sorted[dx_true_col] == dx).sum()
             midpoint = current + count / 2
             yticks.append(midpoint)
