@@ -84,6 +84,7 @@ class LDATopicModel:
         self._beta_raw = self._lda.components_
         self._beta_norm = self._beta_raw / self._beta_raw.sum(axis=1, keepdims=True)
         self._is_fitted = True
+        self._perplexity = self._lda.perplexity(X)
 
         return self
 
