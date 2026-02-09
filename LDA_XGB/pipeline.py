@@ -84,9 +84,10 @@ class CopathologyPipeline:
 
     def fit(
         self,
-        patient_df: pd.DataFrame,
-        hc_df: pd.DataFrame,
-        region_cols: List[str],
+        train_df: pd.DataFrame,
+        region_cols : List[str],
+        standardize = True,
+        ref_df: pd.DataFrame = None,
         dx_col: str = "DX",
         subject_col: str = "PTID",
         run_cv: bool = True,
@@ -97,12 +98,14 @@ class CopathologyPipeline:
 
         Parameters
         ----------
-        patient_df : pd.DataFrame
+        train_df : pd.DataFrame
             Patient data with regional volumes and diagnosis.
-        hc_df : pd.DataFrame
+        ref_df : pd.DataFrame
             Healthy control data for baseline.
         region_cols : list
             Column names for brain regions.
+        standardize : bool
+            Flag to whether apply z score computation on input data
         dx_col : str
             Column name for diagnosis labels.
         subject_col : str
@@ -124,20 +127,25 @@ class CopathologyPipeline:
         self.data_processor.region_cols = self._region_cols
         self.data_processor.dx_col = dx_col
         self.data_processor.subject_col = subject_col
+        if standardize:
+            assert ref_df is not None, "Please Provide Reference DF For Z-score Computation..."
+            if verbose:
+                print("Step 1: Fitting healthy control baseline...")
 
-        if verbose:
-            print("Step 1: Fitting healthy control baseline...")
+            # Fit baseline on healthy controls
+            self.data_processor.fit_baseline(ref_df, region_cols)
 
-        # Fit baseline on healthy controls
-        self.data_processor.fit_baseline(hc_df, region_cols)
-
-        if verbose:
-            print("Step 2: Computing atrophy scores...")
+            if verbose:
+                print("Step 2: Computing atrophy scores...")
 
         # Compute atrophy scores for patients
-        X = self.data_processor.compute_atrophy_scores(patient_df)
-        y = self.data_processor.get_labels(patient_df)
-        subject_ids = self.data_processor.get_subject_ids(patient_df)
+            X = self.data_processor.compute_atrophy_scores(train_df)
+        else:
+            print("Scores Already Stadardized...Skipping Step 1 and 2...")
+            X = train_df[region_cols].values
+            
+        y = self.data_processor.get_labels(train_df)
+        subject_ids = self.data_processor.get_subject_ids(train_df)
 
         if verbose:
             print(f"   Patients: {X.shape[0]}, Regions: {X.shape[1]}")
