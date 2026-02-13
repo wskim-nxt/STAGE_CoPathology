@@ -11,10 +11,10 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Dict, List, Any, Union
 
-from data_processor import DataProcessor
-from lda_model import LDATopicModel
-from classifier import TopicClassifier
-from visualizer import CopathologyVisualizer
+from .data_processor import DataProcessor
+from .lda_model import LDATopicModel
+from .classifier import TopicClassifier
+from .visualizer import CopathologyVisualizer
 
 
 class CopathologyPipeline:
@@ -190,16 +190,18 @@ class CopathologyPipeline:
 
     def predict_new_subjects(
         self,
-        new_df: pd.DataFrame,
-        subject_col: Optional[str] = None
+        inp_df : pd.DataFrame,
+        subject_col: Optional[str] = None,
+        standardize = False,
+        dx_col = 'DX',
+        cn_dx = None
     ):
         """
         Predict diagnosis for new subjects.
 
         Parameters
         ----------
-        new_df : pd.DataFrame
-            New patient data with regional volumes.
+        X_new : 
         subject_col : str, optional
             Column name for subject IDs.
 
@@ -214,11 +216,22 @@ class CopathologyPipeline:
         """
         if not self._is_fitted:
             raise RuntimeError("Pipeline must be fitted before prediction")
+        if inp_df[self._region_cols].isna().any().any():
+            raise ValueError("Validation VA data contains nan")
 
         # Compute atrophy scores
-        X_new = self.data_processor.compute_atrophy_scores(new_df)
-
-        # Get topic weights
+        if standardize:
+            X_new = self.data_processor.compute_atrophy_scores(inp_df)
+        elif cn_dx is not None:
+            print('Calculating Z scores from external cohort reference...')
+            ext_data_processor = DataProcessor(region_cols=self._region_cols, dx_col=dx_col, subject_col=subject_col)
+            ext_cn_df = inp_df[inp_df[dx_col]==cn_dx]
+            ext_data_processor.fit_baseline(ext_cn_df)
+            X_new = ext_data_processor.compute_atrophy_scores(data=inp_df)
+        else:
+            X_new = inp_df[self._region_cols].values
+            
+        # Get topic weights                
         theta_new = self.lda_model.transform(X_new)
 
         # Get predictions
@@ -233,11 +246,11 @@ class CopathologyPipeline:
 
         # Add subject IDs if available
         subj_col = subject_col or self.data_processor.subject_col
-        if subj_col in new_df.columns:
-            results.insert(0, "SUBJ_ID", new_df[subj_col].values)
+        if subj_col in inp_df.columns:
+            results.insert(0, "SUBJ_ID", inp_df[subj_col].values)
 
         # Add predictions
-        results["Predicted_DX"] = y_pred
+        results["pred_DX"] = y_pred
 
         # Add probabilities
         for i, dx in enumerate(self._dx_classes):
@@ -304,7 +317,9 @@ class CopathologyPipeline:
         self,
         theta: np.ndarray,
         labels: np.ndarray,
-        topic_label_map: Optional[Dict[str, str]] = None
+        topic_label_map: Optional[Dict[str, str]] = None,
+        region_names = None,
+        label_order = None
     ):
         """
         Generate standard visualization plots.
@@ -320,12 +335,14 @@ class CopathologyPipeline:
         """
         topic_patterns = self.lda_model.get_topic_patterns()
         topic_names = self.lda_model.topic_names
+        if region_names is None:
+            region_names = self._region_cols
 
         print("Generating visualizations...")
 
         # Topic heatmap
         self.visualizer.plot_topic_heatmap(
-            topic_patterns, self._region_cols, topic_names
+            topic_patterns, region_names, topic_names
         )
 
         # Diagnosis profiles (spider charts)
@@ -335,7 +352,7 @@ class CopathologyPipeline:
 
         # Top regions per topic
         self.visualizer.plot_top_regions_per_topic(
-            topic_patterns, self._region_cols, topic_names=topic_names
+            topic_patterns, region_names, topic_names=topic_names
         )
 
         # If CV was run, plot results
@@ -352,7 +369,8 @@ class CopathologyPipeline:
             self.visualizer.plot_confusion_matrix(
                 self.classifier.get_confusion_matrix(),
                 list(self.classifier.classes),
-                accuracy=self.classifier.cv_accuracy
+                accuracy=self.classifier.cv_accuracy,
+                label_order=label_order
             )
 
             self.visualizer.plot_prediction_probabilities(cv_results)

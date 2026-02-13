@@ -32,7 +32,8 @@ class CopathologyVisualizer:
         self,
         output_dir: str = "results/figures",
         figsize: Tuple[int, int] = (10, 8),
-        style: str = "whitegrid"
+        style: str = "whitegrid",
+        region_names = None
     ):
         self.output_dir = output_dir
         self.figsize = figsize
@@ -175,6 +176,7 @@ class CopathologyVisualizer:
         dx_labels: np.ndarray,
         topic_names: Optional[List[str]] = None,
         label_map: Optional[Dict[str, str]] = None,
+        y_max = None,
         title: str = "Diagnosis Topic Profiles",
         save: bool = True,
         filename: str = "diagnosis_topic_profiles.png"
@@ -211,6 +213,9 @@ class CopathologyVisualizer:
         df = pd.DataFrame(theta, columns=topic_names)
         df["DX"] = dx_labels
         group_means = df.groupby("DX").mean()
+        if y_max is None:
+            y_max = group_means.values.max() * 1.1
+        group_counts = df.groupby("DX").size()
 
         # Labels for radar
         if label_map:
@@ -252,7 +257,7 @@ class CopathologyVisualizer:
 
         ax.set_xticks(angles[:-1])
         ax.set_xticklabels(labels, size=12)
-        ax.set_ylim(0, group_means.values.max() * 1.1)
+        ax.set_ylim(0, y_max)
         ax.set_title("All Diagnoses", size=14)
         ax.legend(loc="upper right", bbox_to_anchor=(1.1, 1.0), fontsize=8)
 
@@ -269,8 +274,8 @@ class CopathologyVisualizer:
             ax.fill(angles, values_closed, alpha=0.25, color=colors[idx % len(colors)])
             ax.set_xticks(angles[:-1])
             ax.set_xticklabels(labels, size=12)
-            ax.set_ylim(0, group_means.values.max() * 1.1)
-            ax.set_title(dx, size=14)
+            ax.set_ylim(0, y_max) ####
+            ax.set_title(f"{dx} (n={group_counts[dx]})", size=14)
 
         # Hide empty subplots
         for idx in range(n_dx + 1, len(axes)):
@@ -437,6 +442,7 @@ class CopathologyVisualizer:
 
         return fig
 
+
     def plot_confusion_matrix(
         self,
         cm: np.ndarray,
@@ -446,52 +452,55 @@ class CopathologyVisualizer:
         cmap: str = "Blues",
         title: str = "Confusion Matrix",
         save: bool = True,
-        filename: str = "confusion_matrix.png"
+        filename: str = "confusion_matrix.png",
+        label_order = None,  # NEW
     ):
         """
-        Plot confusion matrix.
+        Plot confusion matrix with optional manual label order.
 
         Parameters
         ----------
         cm : np.ndarray
-            Confusion matrix.
+            Confusion matrix in the order of `class_names`.
         class_names : list
-            Class labels.
-        accuracy : float, optional
-            Overall accuracy to display in title.
-        normalize : bool
-            Normalize values.
-        cmap : str
-            Colormap.
-        title : str
-            Plot title.
-        save : bool
-            Save figure to file.
-        filename : str
-            Output filename.
-
-        Returns
-        -------
-        plt.Figure
+            Class labels corresponding to cm rows/cols.
+        label_order : list, optional
+            Desired order of labels on axes. Must be a permutation/subset of class_names.
+            If provided, cm and display labels are reordered accordingly.
         """
+        cm = np.asarray(cm)
+        class_names = list(class_names)
+
+        # --- Reorder matrix/labels if requested ---
+        if label_order is not None:
+            label_order = list(label_order)
+
+            missing = [lab for lab in label_order if lab not in class_names]
+            if missing:
+                raise ValueError(f"label_order contains labels not in class_names: {missing}")
+
+            # If you want to REQUIRE a full permutation, enforce it:
+            extra = [lab for lab in class_names if lab not in label_order]
+            if extra:
+                raise ValueError(
+                    f"label_order must include all class_names. Missing from label_order: {extra}"
+                )
+
+            idx = [class_names.index(lab) for lab in label_order]
+            cm = cm[np.ix_(idx, idx)]
+            class_names = label_order
+
         fig, ax = plt.subplots(figsize=(8, 6))
-
-        disp = ConfusionMatrixDisplay(
-            confusion_matrix=cm,
-            display_labels=class_names
-        )
-
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
         disp.plot(
             cmap=cmap,
             values_format=".2f" if normalize else "d",
-            ax=ax
+            ax=ax,
+            colorbar=True
         )
-        # ---- FIX GRIDLINE ARTIFACTS ----
+
+        # Remove gridlines (matplotlib style grids)
         ax.grid(False)
-        ax.set_xticks(np.arange(len(class_names)))
-        ax.set_yticks(np.arange(len(class_names)))
-        ax.set_xticks([], minor=True)
-        ax.set_yticks([], minor=True)
 
         if accuracy is not None:
             ax.set_title(f"{title} (Accuracy = {accuracy:.3f})")
@@ -499,14 +508,81 @@ class CopathologyVisualizer:
             ax.set_title(title)
 
         plt.tight_layout()
-
         if save:
-            fig.savefig(
-                os.path.join(self.output_dir, filename),
-                bbox_inches="tight"
-            )
-
+            fig.savefig(os.path.join(self.output_dir, filename), bbox_inches="tight")
+            
         return fig
+
+    # def plot_confusion_matrix(
+    #     self,
+    #     cm: np.ndarray,
+    #     class_names: List[str],
+    #     accuracy: Optional[float] = None,
+    #     normalize: bool = False,
+    #     cmap: str = "Blues",
+    #     title: str = "Confusion Matrix",
+    #     save: bool = True,
+    #     filename: str = "confusion_matrix.png"
+    # ):
+    #     """
+    #     Plot confusion matrix.
+
+    #     Parameters
+    #     ----------
+    #     cm : np.ndarray
+    #         Confusion matrix.
+    #     class_names : list
+    #         Class labels.
+    #     accuracy : float, optional
+    #         Overall accuracy to display in title.
+    #     normalize : bool
+    #         Normalize values.
+    #     cmap : str
+    #         Colormap.
+    #     title : str
+    #         Plot title.
+    #     save : bool
+    #         Save figure to file.
+    #     filename : str
+    #         Output filename.
+
+    #     Returns
+    #     -------
+    #     plt.Figure
+    #     """
+    #     fig, ax = plt.subplots(figsize=(8, 6))
+
+    #     disp = ConfusionMatrixDisplay(
+    #         confusion_matrix=cm,
+    #         display_labels=class_names
+    #     )
+
+    #     disp.plot(
+    #         cmap=cmap,
+    #         values_format=".2f" if normalize else "d",
+    #         ax=ax
+    #     )
+    #     # ---- FIX GRIDLINE ARTIFACTS ----
+    #     ax.grid(False)
+    #     ax.set_xticks(np.arange(len(class_names)))
+    #     ax.set_yticks(np.arange(len(class_names)))
+    #     ax.set_xticks([], minor=True)
+    #     ax.set_yticks([], minor=True)
+
+    #     if accuracy is not None:
+    #         ax.set_title(f"{title} (Accuracy = {accuracy:.3f})")
+    #     else:
+    #         ax.set_title(title)
+
+    #     plt.tight_layout()
+
+    #     if save:
+    #         fig.savefig(
+    #             os.path.join(self.output_dir, filename),
+    #             bbox_inches="tight"
+    #         )
+
+    #     return fig 
 
     def plot_prediction_probabilities(
         self,
@@ -740,6 +816,7 @@ class CopathologyVisualizer:
         region_names: List[str],
         top_n: int = 10,
         topic_names: Optional[List[str]] = None,
+        shared_x = True,
         save: bool = True,
         filename: str = "top_regions_per_topic.png"
     ):
@@ -788,6 +865,11 @@ class CopathologyVisualizer:
             ax.barh(range(top_n), values[::-1], color=colors[k % len(colors)])
             ax.set_yticks(range(top_n))
             ax.set_yticklabels(regions[::-1], fontsize=9)
+            if shared_x:
+                global_max = topic_patterns.max()
+                x_max = global_max * 1.1
+                ax.set_xlim(0, x_max)
+                
             ax.set_xlabel("Weight")
             ax.set_title(topic_names[k])
 
