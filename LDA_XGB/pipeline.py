@@ -229,7 +229,10 @@ class CopathologyPipeline:
             ext_data_processor.fit_baseline(ext_cn_df)
             X_new = ext_data_processor.compute_atrophy_scores(data=inp_df)
         else:
+            print('ND scores inputed. Max(0,Z) applied to prevent negative inputs') # Sanity Check
             X_new = inp_df[self._region_cols].values
+            print(self._region_cols)
+            X_new = np.maximum(X_new, 0.0) ## just to make sure no negative values are passed 
             
         # Get topic weights                
         theta_new = self.lda_model.transform(X_new)
